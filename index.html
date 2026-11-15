@@ -112,6 +112,7 @@ dialog::backdrop { background: rgba(8, 8, 20, .62); backdrop-filter: blur(4px); 
 .x { position: absolute; top: 10px; right: 10px; z-index: 1; width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(10, 10, 28, .6); color: #fff; font-size: 16px; cursor: pointer; }
 .banner { display: block; width: 100%; height: 180px; object-fit: cover; }
 .stage { position: relative; }
+.d-body h3.free { margin-top: 18px; }
 .play { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
 .player { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; }
 .stage.playing + .d-head { margin-top: 16px; }
@@ -403,6 +404,12 @@ function setView(v) {
 // ---- Title detail ----
 const DETAIL_Q = `query($id:Int){Media(id:$id){id type siteUrl title{romaji english native} coverImage{extraLarge color} bannerImage description episodes chapters volumes duration status format season seasonYear startDate{year} genres averageScore studios(isMain:true){nodes{name}} nextAiringEpisode{episode airingAt} streamingEpisodes{title thumbnail url site} externalLinks{site url type language} trailer{id site}}}`;
 const cache = new Map();
+// Free, ad-supported legal services; each link searches that site for the title (Pluto TV left out: its search ignores link queries).
+const FREE = [
+  ['Tubi', q => `https://tubitv.com/search/${q}`],
+  ['RetroCrush', q => `https://www.retrocrush.tv/find?q=${q}`],
+  ['YouTube', q => `https://www.youtube.com/results?search_query=${q}+full+episode+official`],
+];
 // Official trailers from AniList, embedded from YouTube or Dailymotion; ids are checked so nothing else lands in the src.
 const trailerSrc = t => t?.site === 'youtube' && /^[\w-]{11}$/.test(t.id) ? `https://www.youtube-nocookie.com/embed/${t.id}?autoplay=1&rel=0`
   : t?.site === 'dailymotion' && /^[a-z0-9]+$/i.test(t.id) ? `https://www.dailymotion.com/embed/video/${t.id}?autoplay=1` : '';
@@ -431,7 +438,7 @@ function renderShow(m) {
     manga && m.status === 'RELEASING' ? 'Publishing' : STATUS[m.status]].filter(Boolean);
   const note = manga
     ? 'Official reading sites. MANGA Plus and VIZ have free chapters for many Shonen Jump series.'
-    : "Sub or dub: pick Japanese or English audio in the service's player. Crunchyroll, Netflix and HIDIVE carry English dubs for most popular shows, usually a few weeks after the Japanese episode.";
+    : "Sub or dub: pick Japanese or English audio in the service's player. Crunchyroll, Netflix and HIDIVE carry English dubs for most popular shows, usually a few weeks after the Japanese episode. The free buttons search Tubi, RetroCrush and YouTube for this title; what they carry depends on your country.";
   $('#dbody').innerHTML = `
     <div class="stage">
       ${m.bannerImage ? `<img class="banner" src="${url(m.bannerImage)}" alt="">` : `<div class="banner" style="background:${hex(m.coverImage.color)}"></div>`}
@@ -455,6 +462,7 @@ function renderShow(m) {
           <a class="chip" href="${url(m.siteUrl)}" ${ext}>AniList page</a>
         </div>
         ${others.length ? `<details><summary>Other languages (${others.length})</summary><div class="chips">${others.map(chip).join('')}</div></details>` : ''}
+        ${manga ? '' : `<h3 class="free">Watch free with ads</h3><div class="chips">${FREE.map(([site, link]) => `<a class="chip" href="${link(encodeURIComponent(name(m)))}" ${ext}>${site}</a>`).join('')}</div>`}
         <p class="note">${links.length ? '' : `No official ${manga ? 'reading site' : 'stream'} is listed for this title yet. `}${note}</p>
       </section>
       ${m.description ? `<p class="desc">${esc(plain(m.description))}</p>` : ''}
