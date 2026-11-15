@@ -111,6 +111,11 @@ dialog { width: min(900px, calc(100% - 24px)); max-height: calc(100% - 24px); pa
 dialog::backdrop { background: rgba(8, 8, 20, .62); backdrop-filter: blur(4px); }
 .x { position: absolute; top: 10px; right: 10px; z-index: 1; width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(10, 10, 28, .6); color: #fff; font-size: 16px; cursor: pointer; }
 .banner { display: block; width: 100%; height: 180px; object-fit: cover; }
+.stage { position: relative; }
+.play { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+.player { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; }
+.stage.playing + .d-head { margin-top: 16px; }
+.stage.playing + .d-head .d-info { padding-top: 0; }
 .d-head { display: grid; grid-template-columns: 150px 1fr; gap: 20px; padding: 0 24px; margin-top: -64px; position: relative; }
 .poster { width: 150px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; border: 3px solid var(--surface); background: var(--line); }
 .d-info { padding-top: 72px; min-width: 0; display: grid; gap: 6px; align-content: start; }
@@ -396,8 +401,12 @@ function setView(v) {
 }
 
 // ---- Title detail ----
-const DETAIL_Q = `query($id:Int){Media(id:$id){id type siteUrl title{romaji english native} coverImage{extraLarge color} bannerImage description episodes chapters volumes duration status format season seasonYear startDate{year} genres averageScore studios(isMain:true){nodes{name}} nextAiringEpisode{episode airingAt} streamingEpisodes{title thumbnail url site} externalLinks{site url type language}}}`;
+const DETAIL_Q = `query($id:Int){Media(id:$id){id type siteUrl title{romaji english native} coverImage{extraLarge color} bannerImage description episodes chapters volumes duration status format season seasonYear startDate{year} genres averageScore studios(isMain:true){nodes{name}} nextAiringEpisode{episode airingAt} streamingEpisodes{title thumbnail url site} externalLinks{site url type language} trailer{id site}}}`;
 const cache = new Map();
+// Official trailers from AniList, embedded from YouTube or Dailymotion; ids are checked so nothing else lands in the src.
+const trailerSrc = t => t?.site === 'youtube' && /^[\w-]{11}$/.test(t.id) ? `https://www.youtube-nocookie.com/embed/${t.id}?autoplay=1&rel=0`
+  : t?.site === 'dailymotion' && /^[a-z0-9]+$/i.test(t.id) ? `https://www.dailymotion.com/embed/video/${t.id}?autoplay=1` : '';
+console.assert(trailerSrc({ site: 'youtube', id: 'dQw4w9WgXcQ' }).includes('/embed/dQw4w9WgXcQ') && trailerSrc({ site: 'youtube', id: 'x"><script>' }) === '' && trailerSrc(null) === '', 'trailerSrc');
 
 async function openShow(id) {
   $('#dbody').innerHTML = '<p class="msg">Loading…</p>';
@@ -424,7 +433,10 @@ function renderShow(m) {
     ? 'Official reading sites. MANGA Plus and VIZ have free chapters for many Shonen Jump series.'
     : "Sub or dub: pick Japanese or English audio in the service's player. Crunchyroll, Netflix and HIDIVE carry English dubs for most popular shows, usually a few weeks after the Japanese episode.";
   $('#dbody').innerHTML = `
-    ${m.bannerImage ? `<img class="banner" src="${url(m.bannerImage)}" alt="">` : `<div class="banner" style="background:${hex(m.coverImage.color)}"></div>`}
+    <div class="stage">
+      ${m.bannerImage ? `<img class="banner" src="${url(m.bannerImage)}" alt="">` : `<div class="banner" style="background:${hex(m.coverImage.color)}"></div>`}
+      ${trailerSrc(m.trailer) ? `<button class="btn primary play" data-play="${esc(trailerSrc(m.trailer))}">▶ Play trailer</button>` : ''}
+    </div>
     <div class="d-head">
       <img class="poster" src="${url(m.coverImage.extraLarge)}" alt="">
       <div class="d-info">
@@ -458,10 +470,18 @@ document.addEventListener('click', e => {
   const show = t.closest('[data-id]'); if (show) return openShow(+show.dataset.id);
   const nav = t.closest('[data-view]'); if (nav) return setView(nav.dataset.view);
   const pick = t.closest('[data-hero]'); if (pick) { heroI = +pick.dataset.hero; return renderHero(); }
+  const play = t.closest('[data-play]');
+  if (play) {
+    const f = Object.assign(document.createElement('iframe'), { className: 'player', src: play.dataset.play, title: 'Trailer' });
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    play.parentElement.classList.add('playing');
+    return play.parentElement.replaceChildren(f);
+  }
   const arrow = t.closest('[data-scroll]');
   if (arrow) { const row = arrow.closest('.shelf').querySelector('.row'); row.scrollBy({ left: arrow.dataset.scroll * row.clientWidth * 0.85, behavior: 'smooth' }); }
 });
 $('#close').onclick = () => $('#detail').close();
+$('#detail').addEventListener('close', () => { $('#dbody').innerHTML = ''; }); // stops a playing trailer
 $('#detail').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 let typing;
 $('#q').addEventListener('input', () => {
