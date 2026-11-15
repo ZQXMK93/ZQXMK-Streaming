@@ -288,13 +288,20 @@ function mediaCard(m) {
     sub: n ? '' : [fmt(m.format), count, when].filter(Boolean).join(' · ') });
 }
 
+// Hide 18+: AniList's adult flag, the Ecchi/Hentai genres, and Nudity tagged at strength 40+ (keeps shows with a brief scene).
+const MATURE_RANK = 40;
+const SAFE = `isAdult:false,genre_not_in:["Ecchi","Hentai"],tag_not_in:["Nudity"],minimumTagRank:${MATURE_RANK}`;
+const mature = m => m.isAdult || m.genres.some(g => g === 'Ecchi' || g === 'Hentai') || m.tags.some(t => t.name === 'Nudity' && t.rank >= MATURE_RANK);
+console.assert(mature({ isAdult: false, genres: ['Ecchi'], tags: [] }) && mature({ isAdult: false, genres: [], tags: [{ name: 'Nudity', rank: 48 }] })
+  && !mature({ isAdult: false, genres: ['Action'], tags: [{ name: 'Nudity', rank: 26 }] }), 'mature');
+
 const FRAG = `fragment M on Media{id type format episodes chapters seasonYear startDate{year} averageScore status title{romaji english} coverImage{large color} nextAiringEpisode{episode airingAt}}`;
 
 // ---- Home: spotlight + shelves ----
 const HOME_Q = `query{
-  hero:Page(perPage:15){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){...M bannerImage description genres}}
-  netflix:Page(perPage:20){media(type:ANIME,licensedBy:"Netflix",sort:TRENDING_DESC,isAdult:false){...M}}
-  manga:Page(perPage:20){media(type:MANGA,sort:TRENDING_DESC,isAdult:false){...M}}
+  hero:Page(perPage:15){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,${SAFE}){...M bannerImage description genres}}
+  netflix:Page(perPage:20){media(type:ANIME,licensedBy:"Netflix",sort:TRENDING_DESC,${SAFE}){...M}}
+  manga:Page(perPage:20){media(type:MANGA,sort:TRENDING_DESC,${SAFE}){...M}}
 }${FRAG}`;
 let hero = [], heroI = 0;
 
@@ -326,7 +333,7 @@ function renderHero() {
 }
 
 // ---- New episodes feed (auto-refreshing) ----
-const FEED_Q = `query($from:Int,$to:Int,$page:Int){Page(page:$page,perPage:50){pageInfo{hasNextPage}airingSchedules(airingAt_greater:$from,airingAt_lesser:$to,sort:TIME_DESC){id episode airingAt media{id isAdult title{romaji english} coverImage{large color}}}}}`;
+const FEED_Q = `query($from:Int,$to:Int,$page:Int){Page(page:$page,perPage:50){pageInfo{hasNextPage}airingSchedules(airingAt_greater:$from,airingAt_lesser:$to,sort:TIME_DESC){id episode airingAt media{id isAdult genres tags{name rank} title{romaji english} coverImage{large color}}}}}`;
 let feed = [], fetchedAt = 0, renderedAt = 0;
 
 async function loadFeed() {
@@ -337,7 +344,7 @@ async function loadFeed() {
     items.push(...d.Page.airingSchedules);
     if (!d.Page.pageInfo.hasNextPage) break;
   }
-  feed = items.filter(s => s.media && !s.media.isAdult);
+  feed = items.filter(s => s.media && !mature(s.media));
   fetchedAt = Date.now(); showErr(null); renderFeed(); updateStatus();
 }
 
@@ -369,7 +376,7 @@ function updateStatus() {
 }
 
 // ---- Browse: Anime / Netflix / Manga ----
-const BROWSE_Q = `query($page:Int,$type:MediaType,$licensedBy:String,$search:String,$sort:[MediaSort],$status:MediaStatus){Page(page:$page,perPage:30){pageInfo{hasNextPage}media(type:$type,licensedBy:$licensedBy,isAdult:false,search:$search,sort:$sort,status:$status){...M}}}${FRAG}`;
+const BROWSE_Q = `query($page:Int,$type:MediaType,$licensedBy:String,$search:String,$sort:[MediaSort],$status:MediaStatus){Page(page:$page,perPage:30){pageInfo{hasNextPage}media(type:$type,licensedBy:$licensedBy,${SAFE},search:$search,sort:$sort,status:$status){...M}}}${FRAG}`;
 let view = 'home', loadedSection = null, bPage = 1, bToken = 0;
 
 async function loadBrowse(reset) {
